@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import * as dat from 'dat.gui';
-import vertexShader from './shaders/vertexShader.glsl';
-import fragmentShader from './shaders/fragmentShader.glsl';
+import fragmentShader from './fragmentShader.glsl';
+import vertexShader from './vertexShader.glsl';
 
 
 class app3 {
@@ -17,14 +17,14 @@ class app3 {
         this.time = 0;
         this.isPlay = true;
         this.parameters = {};
-        this.parameters.count = 100000;
-        this.parameters.size = 0.01;
+        this.parameters.count = 500000;
+        this.parameters.size = 0.005;
         this.parameters.raddius = 5;
-        this.parameters.branches = 3;
+        this.parameters.branches = 8;
         this.parameters.spin = 1;
-        this.parameters.randomness = 0.5;
+        this.parameters.randomness = 0.3;
         this.parameters.randomnessPower = 3;
-        this.parameters.insideColor = '#ff6030';
+        this.parameters.insideColor = '#ff9373';
         this.parameters.outsideColor = '#1b3984';
 
         this.geometry = null;
@@ -64,7 +64,6 @@ class app3 {
     }
 
     createCamera() {
-        let perspective = 5;
         let fov = 75;
         this.camera = new THREE.PerspectiveCamera(fov, this.viewport.aspectRatio, 1, 1000);
         this.camera.position.x = 6;
@@ -85,8 +84,8 @@ class app3 {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     }
     createMesh() {
-
         if (this.points !== null) {
+            console.log(this.points);
             this.geometry.dispose();
             this.material.dispose();
             this.scene.remove(this.points);
@@ -95,24 +94,31 @@ class app3 {
         this.geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(this.parameters.count * 3);
         const colors = new Float32Array(this.parameters.count * 3);
+        const scales = new Float32Array(this.parameters.count * 1);
+        const randomness = new Float32Array(this.parameters.count * 3);
 
         const colorInside = new THREE.Color(this.parameters.insideColor);
         const colorOutside = new THREE.Color(this.parameters.outsideColor);
 
 
-        for (let i = 0; i < this.parameters.count * 3; i++) {
+        for (let i = 0; i < this.parameters.count; i++) {
             const i3 = i * 3;
 
             const raddius = this.parameters.raddius * Math.random();
-            const spinAngle = raddius * this.parameters.spin;
-            const branchAngle = i % this.parameters.branches / this.parameters.branches * Math.PI * 2;
-            const randomX = Math.pow(Math.random(), this.parameters.randomnessPower) * (Math.random() > 0.5 ? 1 : -1);
-            const randomY = Math.pow(Math.random(), this.parameters.randomnessPower) * (Math.random() > 0.5 ? 1 : -1);
-            const randomZ = Math.pow(Math.random(), this.parameters.randomnessPower) * (Math.random() > 0.5 ? 1 : -1);
+            const branchAngle = (i % this.parameters.branches) / this.parameters.branches * Math.PI * 2;
 
-            positions[i3 + 0] = Math.cos(branchAngle + spinAngle) * raddius + randomX;
-            positions[i3 + 1] = randomY;
-            positions[i3 + 2] = Math.sin(branchAngle + spinAngle) * raddius + randomZ;
+
+            positions[i3] = Math.cos(branchAngle) * raddius;
+            positions[i3 + 1] = 0;
+            positions[i3 + 2] = Math.sin(branchAngle) * raddius;
+
+            const randomX = Math.pow(Math.random(), this.parameters.randomnessPower) * (Math.random() > 0.5 ? 1 : -1) * this.parameters.randomness * raddius;
+            const randomY = Math.pow(Math.random(), this.parameters.randomnessPower) * (Math.random() > 0.5 ? 1 : -1) * this.parameters.randomness * raddius;
+            const randomZ = Math.pow(Math.random(), this.parameters.randomnessPower) * (Math.random() > 0.5 ? 1 : -1) * this.parameters.randomness * raddius;
+
+            randomness[i3] = randomX;
+            randomness[i3 + 1] = randomY;
+            randomness[i3 + 2] = randomZ;
 
             const mixedColor = colorInside.clone();
             mixedColor.lerp(colorOutside, raddius / this.parameters.raddius);
@@ -120,6 +126,8 @@ class app3 {
             colors[i3 + 0] = mixedColor.r;
             colors[i3 + 1] = mixedColor.g;
             colors[i3 + 2] = mixedColor.b;
+
+            scales[i] = Math.random();
         }
 
         this.geometry.setAttribute(
@@ -129,18 +137,28 @@ class app3 {
         this.geometry.setAttribute(
             'color', new THREE.BufferAttribute(colors,3)
         )
+        this.geometry.setAttribute(
+            'aScale', new THREE.BufferAttribute(scales,1)
+        )
+        this.geometry.setAttribute(
+            'aRandomness', new THREE.BufferAttribute(randomness,3)
+        )
 
-        this.material = new THREE.PointsMaterial({
-            size: this.parameters.size,
-            sizeAttenuation: true,
+        this.material = new THREE.ShaderMaterial({
             depthWrite: false,
             blending: THREE.AdditiveBlending,
             vertexColors: true,
+            vertexShader: vertexShader,
+            fragmentShader: fragmentShader,
+            uniforms: {
+                uTime: { value: 50.0 },
+                uSize: { value: 30.0 * window.devicePixelRatio },
+            }
         });
 
 
         this.points = new THREE.Points(this.geometry, this.material);
-        this.group.add(this.points);
+        this.scene.add(this.points);
     }
 
     stop() {
@@ -159,7 +177,7 @@ class app3 {
             return;
         }
         this.time += 0.01;
-        this.group.rotation.y = this.time * 0.05;
+        this.material.uniforms.uTime.value += 0.01;
         this.renderer.render(this.scene, this.camera);
         requestAnimationFrame(this.render.bind(this));
     }
@@ -167,10 +185,11 @@ class app3 {
     setupGUI() {
         const gui = new dat.GUI();
         gui.add(this.parameters, 'count').min(100).max(1000000).step(100).onChange(() => this.createMesh());
-        gui.add(this.parameters, 'size').min(0.001).max(0.1).step(0.001).onChange(() => this.createMesh());
+        gui.add(this.material.uniforms.uSize, 'value').min(1).max(100).step(1).name('size').onChange(() => {
+            this.createMesh();
+        });
         gui.add(this.parameters, 'raddius').min(0.01).max(20).step(0.01).onChange(() => this.createMesh());
         gui.add(this.parameters, 'branches').min(2).max(20).step(1).onChange(() => this.createMesh());
-        gui.add(this.parameters, 'spin').min(-5).max(5).step(0.001).onChange(() => this.createMesh());
         gui.add(this.parameters, 'randomness').min(0).max(2).step(0.001).onChange(() => this.createMesh());
         gui.add(this.parameters, 'randomnessPower').min(1).max(10).step(1).onChange(() => this.createMesh());
         gui.addColor(this.parameters, 'insideColor').onChange(() => this.createMesh());
